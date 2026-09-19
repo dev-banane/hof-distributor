@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,6 +15,9 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    env:
+      APP_NAME: OMSI HOF Distributor
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -23,17 +27,22 @@ jobs:
           java-version: "21"
           cache: maven
 
+      - name: Install WiX (needed by jpackage for the installer)
+        run: choco install wixtoolset --version 3.14.1 --no-progress -y
+
       - name: Build jar
         run: mvn -B package
 
       - name: Package Windows app (bundles its own Java)
         run: |
           # jpackage only accepts numeric versions, so "v1.2.0-beta" becomes "1.2.0"
-          $version = "$env:GITHUB_REF_NAME".TrimStart('v') -replace '[^0-9.].*$', ''
+          $version = "$env:TAG".TrimStart('v') -replace '[^0-9.].*$', ''
+          if (-not $version) { $version = '0.0.1' }
           New-Item -ItemType Directory build/input | Out-Null
           Copy-Item target/hof-distributor.jar build/input/
+
           jpackage --type app-image `
-            --name "OMSI HOF Distributor" `
+            --name "$env:APP_NAME" `
             --input build/input `
             --main-jar hof-distributor.jar `
             --main-class de.devbanane.hof.Launcher `
@@ -43,17 +52,44 @@ jobs:
             --add-modules java.base,java.desktop,jdk.jfr,jdk.unsupported `
             --jlink-options "--strip-debug --no-man-pages --no-header-files --compress=zip-6" `
             --dest build/dist
-          Compress-Archive "build/dist/OMSI HOF Distributor" "OMSI-HOF-Distributor-$env:GITHUB_REF_NAME-windows.zip"
-          Copy-Item target/hof-distributor.jar "hof-distributor-$env:GITHUB_REF_NAME.jar"
+
+          # Installer: per-user (no admin prompt), Start menu + desktop shortcut.
+          # The upgrade UUID must never change, so new versions replace old ones.
+          jpackage --type exe `
+            --app-image "build/dist/$env:APP_NAME" `
+            --name "$env:APP_NAME" `
+            --app-version $version `
+            --vendor dev-banane `
+            --description "Copies OMSI 2 HOF files into every bus" `
+            --icon packaging/icon.ico `
+            --win-per-user-install `
+            --win-menu `
+            --win-shortcut `
+            --win-upgrade-uuid e2cec082-860a-4e08-9ba2-768b87752927 `
+            --dest build/installer
+
+          New-Item -ItemType Directory out | Out-Null
+          Move-Item (Get-ChildItem build/installer/*.exe | Select-Object -First 1) "out/OMSI-HOF-Distributor-Setup-$env:TAG.exe"
+          Compress-Archive "build/dist/$env:APP_NAME" "out/OMSI-HOF-Distributor-$env:TAG-windows-portable.zip"
+          Copy-Item target/hof-distributor.jar "out/hof-distributor-$env:TAG.jar"
+          Get-ChildItem out
+
+      - name: Upload build (manual runs)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hof-distributor-dev
+          path: out/*
 
       - uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
         with:
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           body: |
-            **Download `OMSI-HOF-Distributor-${{ github.ref_name }}-windows.zip`**, unzip it anywhere and run `OMSI HOF Distributor.exe`. No Java needed.
+            ### Download
 
-            The `.jar` is for people who already have Java 21+ installed (`java -jar hof-distributor-${{ github.ref_name }}.jar`).
-          files: |
-            OMSI-HOF-Distributor-${{ github.ref_name }}-windows.zip
-            hof-distributor-${{ github.ref_name }}.jar
+            - **`OMSI-HOF-Distributor-Setup-${{ github.ref_name }}.exe`**: easiest. Run it, then start the app from the desktop or Start menu. No Java needed.
+            - `OMSI-HOF-Distributor-${{ github.ref_name }}-windows-portable.zip`: no install. Unzip anywhere and run `OMSI HOF Distributor.exe`.
+            - `hof-distributor-${{ github.ref_name }}.jar`: for people who already have Java 21+ (`java -jar hof-distributor-${{ github.ref_name }}.jar`).
+          files: out/*

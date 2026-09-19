@@ -5,8 +5,13 @@ them into every selected vehicle folder, so every bus has every HOF.
 
 ## Download
 
-Grab the latest `OMSI-HOF-Distributor-...-windows.zip` from the [Releases](https://github.com/dev-banane/hof-distributor/releases) page,
-unzip it anywhere and run `OMSI HOF Distributor.exe`. No Java installation needed.
+Go to the [Releases](https://github.com/dev-banane/hof-distributor/releases) page and download either:
+
+- **`OMSI-HOF-Distributor-Setup-....exe`**: run it, then start the app from the desktop or Start menu.
+- `OMSI-HOF-Distributor-...-windows-portable.zip`: no install, unzip anywhere and run `OMSI HOF Distributor.exe`.
+
+No Java installation needed for either. Windows may show a "Windows protected your PC" warning because the app
+isn't code-signed; click **More info**, then **Run anyway**.
 
 The app finds your OMSI 2 folder through Steam and remembers the folder you last used
 (`%APPDATA%\OMSI HOF Distributor\settings.properties`).
