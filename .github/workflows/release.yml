@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build jar
+        run: mvn -B package
+
+      - name: Package Windows app (bundles its own Java)
+        run: |
+          # jpackage only accepts numeric versions, so "v1.2.0-beta" becomes "1.2.0"
+          $version = "$env:GITHUB_REF_NAME".TrimStart('v') -replace '[^0-9.].*$', ''
+          New-Item -ItemType Directory build/input | Out-Null
+          Copy-Item target/hof-distributor.jar build/input/
+          jpackage --type app-image `
+            --name "OMSI HOF Distributor" `
+            --input build/input `
+            --main-jar hof-distributor.jar `
+            --main-class de.devbanane.hof.Launcher `
+            --icon packaging/icon.ico `
+            --app-version $version `
+            --vendor dev-banane `
+            --add-modules java.base,java.desktop,jdk.jfr,jdk.unsupported `
+            --jlink-options "--strip-debug --no-man-pages --no-header-files --compress=zip-6" `
+            --dest build/dist
+          Compress-Archive "build/dist/OMSI HOF Distributor" "OMSI-HOF-Distributor-$env:GITHUB_REF_NAME-windows.zip"
+          Copy-Item target/hof-distributor.jar "hof-distributor-$env:GITHUB_REF_NAME.jar"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body: |
+            **Download `OMSI-HOF-Distributor-${{ github.ref_name }}-windows.zip`**, unzip it anywhere and run `OMSI HOF Distributor.exe`. No Java needed.
+
+            The `.jar` is for people who already have Java 21+ installed (`java -jar hof-distributor-${{ github.ref_name }}.jar`).
+          files: |
+            OMSI-HOF-Distributor-${{ github.ref_name }}-windows.zip
+            hof-distributor-${{ github.ref_name }}.jar
