@@ -19,16 +19,30 @@ jobs:
       APP_NAME: OMSI HOF Distributor
       TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
           cache: maven
 
-      - name: Install WiX (needed by jpackage for the installer)
-        run: choco install wixtoolset --version 3.14.1 --no-progress -y
+      - name: Ensure WiX 3 is available (needed by jpackage for the installer)
+        run: |
+          # The runner image usually ships WiX 3 already; only install it if it's missing.
+          $candle = Get-Command candle.exe -ErrorAction SilentlyContinue
+          if (-not $candle) {
+            $candle = Get-ChildItem "${env:ProgramFiles(x86)}\WiX Toolset v3*\bin\candle.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $candle) {
+            choco install wixtoolset --no-progress -y
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $candle = Get-ChildItem "${env:ProgramFiles(x86)}\WiX Toolset v3*\bin\candle.exe" | Select-Object -First 1
+          }
+          $bin = Split-Path ($candle.Source ?? $candle.FullName)
+          Write-Host "Using WiX from $bin"
+          # Make sure jpackage finds it via PATH in later steps.
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
       - name: Build jar
         run: mvn -B package
